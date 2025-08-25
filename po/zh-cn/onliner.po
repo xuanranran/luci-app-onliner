@@ -12,3 +12,12 @@ msgstr "当前无任何设备在线"
 
 msgid "Sort by:"
 msgstr "排序:"
+
+msgid "Hostname"
+msgstr "主机名"
+
+msgid "IPv4-Address"
+msgstr "IPv4 地址"
+
+msgid "MAC-Address"
+msgstr "MAC 地址"

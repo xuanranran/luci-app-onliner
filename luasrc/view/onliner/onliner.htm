@@ -54,7 +54,7 @@ local function online_data()
 end
 
 
-if luci.http.formvalue("status") == "1" then
+if luci.http.formvalue("user online") == "1" then
 	local rv = {
 		onlines   = online_data()
 	}	
