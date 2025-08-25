@@ -21,3 +21,6 @@ msgstr "IPv4 地址"
 
 msgid "MAC-Address"
 msgstr "MAC 地址"
+
+msgid "Interface"
+msgstr "接口"
