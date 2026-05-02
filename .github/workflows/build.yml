@@ -1,0 +1,108 @@
+name: Build OpenWrt Package
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'Makefile'
+      - 'htdocs/**'
+      - 'po/**'
+      - 'root/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'Makefile'
+      - 'htdocs/**'
+      - 'po/**'
+      - 'root/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.package_format }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: "24.10.4"
+            package_format: ipk
+            description: "OpenWrt 24.10 and earlier"
+          - sdk: "SNAPSHOT"
+            package_format: apk
+            description: "OpenWrt 25.12 and later"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          set -e
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
+
+          restore_owner() {
+            sudo chown -R --reference="$GITHUB_WORKSPACE/.." "$GITHUB_WORKSPACE"
+          }
+
+          trap restore_owner EXIT
+
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/feed" \
+            -v "$GITHUB_WORKSPACE/artifacts:/artifacts" \
+            ghcr.io/openwrt/sdk:x86_64-${{ matrix.sdk }} \
+            bash -lc '
+              set -e
+
+              [ ! -f setup.sh ] || bash setup.sh
+
+              sed \
+                -e "s,https://git.openwrt.org/feed/,https://github.com/openwrt/," \
+                -e "s,https://git.openwrt.org/openwrt/,https://github.com/openwrt/," \
+                -e "s,https://git.openwrt.org/project/,https://github.com/openwrt/," \
+                feeds.conf.default > feeds.conf
+
+              ./scripts/feeds update -a
+              ./scripts/feeds install -a
+
+              rm -rf package/luci-app-onliner
+              mkdir -p package/luci-app-onliner
+              cp -a /feed/Makefile /feed/htdocs /feed/po /feed/root package/luci-app-onliner/
+
+              echo "CONFIG_PACKAGE_luci-app-onliner=m" >> .config
+              make defconfig
+              make package/luci-app-onliner/compile V=sc -j"$(nproc)"
+
+              mkdir -p /artifacts
+              find bin/packages/ -type f -name "luci-app-onliner*.${{ matrix.package_format }}" -exec cp {} /artifacts/ \;
+            '
+
+      - name: Prepare artifact
+        run: |
+          set -e
+
+          mkdir -p bin/artifacts
+          find artifacts/ -type f -name "luci-app-onliner*.${{ matrix.package_format }}" -exec cp {} bin/artifacts/ \;
+
+          if [ -z "$(ls -A bin/artifacts)" ]; then
+            echo "::error::No luci-app-onliner ${{ matrix.package_format }} package found."
+            find artifacts/ -type f | sort
+            exit 1
+          fi
+
+          echo "${{ matrix.description }}" > bin/artifacts/INSTALL_TARGET.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-onliner-${{ matrix.package_format }}
+          path: bin/artifacts/*
+          if-no-files-found: error
